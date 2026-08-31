@@ -132,8 +132,7 @@ fig.legend(
 fig.tight_layout(rect=(0, 0.16, 1, 1), w_pad=2.2)
 
 output_path = (
-    r"A:\PHD_PROJECT\TreadmillController"
-    r"\ProcessingSignalsBCI\participant_outcomes.png"
+    r"A:\\ARTICLES\\MDPI 2026\\Complete_code\\participant_outcomes.png"
 )
 
 fig.savefig(
