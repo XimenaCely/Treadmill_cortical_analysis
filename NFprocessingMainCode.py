@@ -15,9 +15,10 @@ import math
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from pathlib import Path
+import csv
 
-# Change subject folder depending on where you store the data, as well as the participant P01, P02, P03
-subject_folder = Path(r"A:\\ARTICLES\\MDPI 2026\\Complete_code\\P01")
+# Change subject folder depending on where you store the data, as well as the participant P01, P02, P03, P04, P05
+subject_folder = Path(r"A:\\ARTICLES\\MDPI 2026\\Complete_code\\P05")
 
 eeg_fs=sampling_rate=125
 pow_PM = []
@@ -25,6 +26,77 @@ RP=[]
 window_seconds = 1.0
 epoch_interval_seconds = 0.1
 window_samples = round(window_seconds * sampling_rate)  # 125
+import os
+import csv
+import numpy as np
+
+# Accumulate records across ALL participants and sessions
+pnorm_records = []
+velocity_records = []
+
+
+def save_results(
+    participant_id,
+    session_name,
+    condition,
+    high_count,
+    med_count,
+    low_count,
+    Pnorm
+):
+    # Save individual Pnorm observations
+    values = np.asarray(Pnorm, dtype=float).flatten()
+
+    for observation, value in enumerate(values):
+        pnorm_records.append([
+            str(participant_id),
+            str(session_name),
+            str(condition),
+            observation,
+            float(value)
+        ])
+
+    # Save velocity counts
+    velocity_records.append([
+        str(participant_id),
+        str(session_name),
+        str(condition),
+        float(np.asarray(high_count).sum()),
+        float(np.asarray(med_count).sum()),
+        float(np.asarray(low_count).sum())
+    ])
+
+
+def write_saved_data(output_folder="statistical_data"):
+    os.makedirs(output_folder, exist_ok=True)
+
+    with open(
+        os.path.join(output_folder, "pnorm_values.csv"),
+        "w",
+        newline=""
+    ) as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "participant", "session", "condition",
+            "observation", "Pnorm"
+        ])
+        writer.writerows(pnorm_records)
+
+    with open(
+        os.path.join(output_folder, "velocity_counts.csv"),
+        "w",
+        newline=""
+    ) as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "participant", "session", "condition",
+            "High", "Medium", "Low"
+        ])
+        writer.writerows(velocity_records)
+
+    print(f"Saved {len(pnorm_records)} Pnorm observations.")
+    print(f"Saved {len(velocity_records)} velocity records.")
+    print(f"Output folder: {output_folder}")
 
 def calculate_power_spectrum(X, Fs, freq_range):
     fft_df = np.fft.fft(X,axis=0)
@@ -207,9 +279,9 @@ for session_key in calibration_sessions:
     )
 
     axes[0].set_xticks([1, 2, 3])
-    axes[0].set_xticklabels(["Baseline","Active\nwalking","MI + NF"])
+    axes[0].set_xticklabels(["Baseline","Active\nwalking","KMI + PF"])
     axes[0].set_ylim(0.3, 2.2)
-    axes[0].set_ylabel("Normalized Power\n Laplacian filter")
+    axes[0].set_ylabel("Normalized Power\n (Pnorm)")
     axes[0].grid(axis="y", linestyle="--", alpha=0.4)
     axes[0].set_axisbelow(True)
 
@@ -228,9 +300,9 @@ for session_key in calibration_sessions:
     )
 
     axes[1].set_xticks([1])
-    axes[1].set_xticklabels(["RP"])
+    axes[1].set_xticklabels(["R"])
     axes[1].set_ylim(0, 125)
-    axes[1].set_ylabel("Relative Power [%]")
+    axes[1].set_ylabel("R [%]")
     axes[1].grid(axis="y", linestyle="--", alpha=0.4)
     axes[1].set_axisbelow(True)
 
@@ -256,7 +328,7 @@ for session_key in calibration_sessions:
     )
 
     axes[2].bar_label(bars,labels=[f"{value:g}" for value in velocity_counts],padding=3)
-    axes[2].set_ylim(0, 1250)
+    axes[2].set_ylim(0, 2500)
     axes[2].set_ylabel("Number of correct values")
     axes[2].yaxis.set_major_locator(MaxNLocator(integer=True))
     axes[2].grid(axis="y", linestyle="--", alpha=0.4)
@@ -266,3 +338,88 @@ for session_key in calibration_sessions:
     output_path = os.path.join(subject_folder, f"{session_name}_power_velocity_summary.eps")
     fig.savefig(output_path,format="eps",bbox_inches="tight")
     plt.show()
+
+    # Use the actual participant folder name as the participant ID
+    participant_id = subject_folder.name
+
+    # Save Baseline
+    save_results(
+        participant_id,
+        session_name,
+        "Baseline",
+        velocHigh_countbase,
+        velocMed_countbase,
+        velocLow_countbase,
+        Ptotbase
+    )
+
+    # Save Active walking
+    save_results(
+        participant_id,
+        session_name,
+        "Active",
+        velocHigh_countPass,
+        velocMed_countPass,
+        velocLow_countPass,
+        PtotPass
+    )
+
+    # Save Imagery, displayed in the figure as KMI + PF
+    save_results(
+        participant_id,
+        session_name,
+        "Imagery",
+        velocHigh_countMI,
+        velocMed_countMI,
+        velocLow_countMI,
+        PtotMI
+    )
+
+    threshold = 1.4
+
+    data = {
+        "Baseline": np.asarray(Ptotbase).flatten(),
+        "Active walking": np.asarray(PtotPass).flatten(),
+        "KMI + PF": np.asarray(PtotMI).flatten()
+    }
+
+    for condition, values in data.items():
+        # Remove NaN and infinite values
+        values = values[np.isfinite(values)]
+
+        if len(values) == 0:
+            print(f"\n{condition}: no valid data")
+            continue
+
+        mean = np.mean(values)
+        std = np.std(values, ddof=1) if len(values) > 1 else np.nan
+        median = np.median(values)
+
+        q1, q3 = np.percentile(values, [25, 75])
+        iqr = q3 - q1
+
+        percentage_above = 100 * np.mean(values > threshold)
+        percentage_below = 100 * np.mean(values < threshold)
+        percentage_equal = 100 * np.mean(values == threshold)
+
+        mean_difference = mean - threshold
+
+        # One-sample standardized effect size relative to threshold
+        cohens_d = (
+            (mean - threshold) / std
+            if len(values) > 1 and std > 0
+            else np.nan
+        )
+
+        print(f"\n--- {condition} ---")
+        print(f"N: {len(values)}")
+        print(f"Mean ± STD: {mean:.3f} ± {std:.3f}")
+        print(f"Median: {median:.3f}")
+        print(f"Q1–Q3: {q1:.3f}–{q3:.3f}")
+        print(f"IQR: {iqr:.3f}")
+        print(f"Min–Max: {np.min(values):.3f}–{np.max(values):.3f}")
+        print(f"Mean − threshold: {mean_difference:+.3f}")
+        print(f"Above {threshold}: {percentage_above:.1f}%")
+        print(f"Below {threshold}: {percentage_below:.1f}%")
+        print(f"Equal to {threshold}: {percentage_equal:.1f}%")
+        print(f"Cohen's d vs. threshold: {cohens_d:.3f}")
